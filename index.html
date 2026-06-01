@@ -690,8 +690,11 @@ btnAxis.addEventListener('click', () => {
 const btnShadow = document.getElementById('btn-shadow');
 btnShadow.addEventListener('click', () => {
     shadowLevel = (shadowLevel + 1) % SHADOW_LEVELS.length;
-    shadowCatcher.material.opacity = SHADOW_LEVELS[shadowLevel].opacity;
-    btnShadow.textContent = SHADOW_LEVELS[shadowLevel].label;
+    const lv = SHADOW_LEVELS[shadowLevel];
+    shadowCatcher.material.opacity = lv.opacity;
+    sunLight.castShadow = lv.opacity > 0;   // 影なしのときは積み木同士の影も描かない
+    renderer.shadowMap.needsUpdate = true;
+    btnShadow.textContent = lv.label;
     btnShadow.classList.toggle('active', shadowLevel !== 0);
 });
 
