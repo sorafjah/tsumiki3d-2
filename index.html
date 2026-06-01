@@ -1,0 +1,774 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no">
+    <title>つみきアプリ</title>
+    <script type="importmap">
+        {
+            "imports": {
+                "three": "https://cdn.jsdelivr.net/npm/three@0.163.0/build/three.module.js",
+                "three/addons/": "https://cdn.jsdelivr.net/npm/three@0.163.0/examples/jsm/"
+            }
+        }
+    </script>
+    <style>
+        * { box-sizing: border-box; margin: 0; padding: 0; }
+
+        body {
+            overflow: hidden;
+            background: #e8f4f0;
+            font-family: 'Hiragino Maru Gothic ProN', 'BIZ UDGothic', sans-serif;
+            user-select: none;
+            -webkit-user-select: none;
+        }
+
+        /* キャンバス：画面全体（上部バーなし）、下部バー分だけ除く */
+        #container {
+            position: fixed;
+            top: 0;
+            left: 0;
+            right: 0;
+            bottom: 130px;
+            overflow: hidden;
+        }
+        #container canvas { display: block; width: 100%; height: 100%; }
+
+        /* ─── 下部バー ─── */
+        #bottombar {
+            position: fixed;
+            bottom: 0; left: 0; right: 0;
+            height: 130px;
+            background: #ffffff;
+            border-top: 2px solid #cce4da;
+            box-shadow: 0 -2px 10px rgba(0,0,0,0.07);
+            z-index: 200;
+            display: grid;
+            grid-template-columns: 150px 1fr 100px;
+            align-items: center;
+            padding: 8px 14px;
+            gap: 8px;
+        }
+
+        /* ── 左：視点ボタン ── */
+        #view-controls {
+            display: grid;
+            grid-template-areas:
+                ". up ."
+                "lf .  rt"
+                ". dn .";
+            grid-template-columns: repeat(3, 44px);
+            grid-template-rows: repeat(3, 36px);
+            gap: 3px;
+        }
+        .vbtn {
+            border-radius: 8px;
+            border: 2px solid #c0ddd4;
+            background: #f0faf6;
+            color: #2a7a5a;
+            font-size: 20px;
+            cursor: pointer;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            -webkit-tap-highlight-color: transparent;
+            touch-action: none;
+            transition: background 0.1s;
+        }
+        .vbtn:active { background: #b8edd4; }
+        #vbtn-up { grid-area: up; }
+        #vbtn-lf { grid-area: lf; }
+        #vbtn-rt { grid-area: rt; }
+        #vbtn-dn { grid-area: dn; }
+
+        /* ── 中央：アクション ── */
+        #action-area {
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            gap: 7px;
+        }
+        .action-row { display: flex; gap: 7px; align-items: center; }
+
+        .abtn {
+            height: 44px;
+            padding: 0 16px;
+            border-radius: 10px;
+            border: none;
+            font-size: 15px;
+            font-weight: 800;
+            cursor: pointer;
+            white-space: nowrap;
+            -webkit-tap-highlight-color: transparent;
+            transition: transform 0.1s, filter 0.1s;
+            letter-spacing: 0.03em;
+        }
+        .abtn:active { transform: scale(0.90); filter: brightness(1.1); }
+
+        /* おく・えらぶ・けす：同系色（落ち着いたティール系） */
+        #btn-place  { background: #5bbfa0; color: #fff; }
+        #btn-select { background: #4aaeae; color: #fff; }
+        #btn-delete { background: #6090b0; color: #fff; }
+
+        #btn-place.active  { box-shadow: 0 0 0 3px rgba(91,191,160,0.5); filter: brightness(0.88); }
+        #btn-select.active { box-shadow: 0 0 0 3px rgba(74,174,174,0.5); filter: brightness(0.88); }
+
+        /* グレー系ボタン */
+        .gbtn {
+            height: 36px;
+            padding: 0 11px;
+            border-radius: 8px;
+            border: none;
+            font-size: 13px;
+            font-weight: 700;
+            cursor: pointer;
+            background: #e8e8e8;
+            color: #555;
+            white-space: nowrap;
+            -webkit-tap-highlight-color: transparent;
+            transition: background 0.1s, transform 0.1s;
+        }
+        .gbtn:active { background: #d0d0d0; transform: scale(0.92); }
+        .gbtn.active { background: #c8d8d0; color: #1a5a3a; }
+
+        /* ── 右：上下ボタン（視点ボタンと同サイズ感） ── */
+        #updown-controls {
+            display: flex;
+            flex-direction: column;
+            gap: 6px;
+            align-items: center;
+        }
+        /* 視点ボタンと合わせて 44×36px */
+        .udbtn {
+            width: 44px;
+            height: 36px;
+            border-radius: 8px;
+            border: 2px solid #c0ddd4;
+            background: #f0faf6;
+            color: #2a7a5a;
+            font-size: 18px;
+            cursor: pointer;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            -webkit-tap-highlight-color: transparent;
+            transition: background 0.1s;
+        }
+        .udbtn:active { background: #b8edd4; }
+
+        /* ─── カラーパレット（ポップアップ） ─── */
+        #color-popup {
+            position: fixed;
+            bottom: 138px;
+            left: 50%;
+            transform: translateX(-50%);
+            background: #fff;
+            border: 2px solid #cce4da;
+            border-radius: 14px;
+            box-shadow: 0 -4px 18px rgba(0,0,0,0.13);
+            padding: 10px 12px;
+            display: none;
+            flex-direction: column;
+            gap: 8px;
+            z-index: 300;
+        }
+        #color-popup.open { display: flex; }
+
+        /* 6つずつ2行 */
+        .color-row {
+            display: flex;
+            gap: 8px;
+        }
+
+        .color-btn {
+            width: 36px;
+            height: 36px;
+            border-radius: 50%;
+            border: 3px solid transparent;
+            cursor: pointer;
+            flex-shrink: 0;
+            transition: transform 0.15s, border-color 0.15s;
+            box-shadow: 0 2px 5px rgba(0,0,0,0.18);
+            -webkit-tap-highlight-color: transparent;
+        }
+        .color-btn.selected {
+            border-color: #222;
+            transform: scale(1.2);
+        }
+
+        #color-dot {
+            display: inline-block;
+            width: 13px;
+            height: 13px;
+            border-radius: 50%;
+            border: 2px solid #aaa;
+            vertical-align: middle;
+            margin-right: 3px;
+        }
+
+        /* ─── モーダル ─── */
+        .modal {
+            display: none;
+            position: fixed;
+            inset: 0;
+            background: rgba(0,0,0,0.32);
+            z-index: 500;
+            align-items: center;
+            justify-content: center;
+        }
+        .modal.open { display: flex; }
+        .modal-box {
+            background: #fff;
+            border-radius: 16px;
+            padding: 26px 28px;
+            max-width: 310px;
+            width: 88%;
+            text-align: center;
+            color: #333;
+            box-shadow: 0 4px 20px rgba(0,0,0,0.14);
+        }
+        .modal-box p { font-size: 16px; margin-bottom: 20px; line-height: 1.65; }
+        .modal-box button {
+            padding: 10px 30px;
+            border-radius: 10px;
+            border: none;
+            font-size: 15px;
+            font-weight: 800;
+            cursor: pointer;
+            background: #5bbfa0;
+            color: #fff;
+        }
+
+        /* ─── ローディング ─── */
+        #loading {
+            position: fixed;
+            inset: 0;
+            background: #e8f4f0;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            z-index: 999;
+            color: #2a7a5a;
+            font-size: 20px;
+            font-weight: 700;
+        }
+        #loading.hidden { display: none; }
+    </style>
+</head>
+<body>
+
+<div id="container"></div>
+
+<!-- カラーパレット（ポップアップ） -->
+<div id="color-popup">
+    <div class="color-row" id="color-row-top"></div>
+    <div class="color-row" id="color-row-bot"></div>
+</div>
+
+<div id="bottombar">
+
+    <!-- 左：視点 -->
+    <div id="view-controls">
+        <button class="vbtn" id="vbtn-up">↑</button>
+        <button class="vbtn" id="vbtn-lf">←</button>
+        <button class="vbtn" id="vbtn-rt">→</button>
+        <button class="vbtn" id="vbtn-dn">↓</button>
+    </div>
+
+    <!-- 中央：アクション -->
+    <div id="action-area">
+        <div class="action-row">
+            <button class="abtn" id="btn-place">おく</button>
+            <button class="abtn" id="btn-select">えらぶ</button>
+            <button class="abtn" id="btn-delete">けす</button>
+        </div>
+        <div class="action-row">
+            <button class="gbtn" id="btn-color"><span id="color-dot"></span>いろ</button>
+            <button class="gbtn" id="btn-edges">辺を表示</button>
+            <button class="gbtn" id="btn-axis">軸を隠す</button>
+            <button class="gbtn" id="btn-shadow">影あり</button>
+            <button class="gbtn" id="btn-reset">視点リセット</button>
+        </div>
+    </div>
+
+    <!-- 右：上下 -->
+    <div id="updown-controls">
+        <button class="udbtn" id="btn-up">△</button>
+        <button class="udbtn" id="btn-dn">▽</button>
+    </div>
+
+</div>
+
+<div id="msgModal" class="modal">
+    <div class="modal-box">
+        <p id="msgText"></p>
+        <button id="msgClose">OK</button>
+    </div>
+</div>
+
+<div id="loading">よみこみ中...</div>
+
+<script type="module">
+import * as THREE from 'three';
+import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
+
+// ══════════════════════════════════════════════
+//  定数
+// ══════════════════════════════════════════════
+const CUBE_SIZE = 1;
+// 6×2 = 12色
+const COLORS = [
+    { hex: 0xFF7F7F }, { hex: 0xFFA500 }, { hex: 0xFFFF00 },
+    { hex: 0x90EE90 }, { hex: 0x6495ED }, { hex: 0xB080FF },
+    { hex: 0xFFC0CB }, { hex: 0xFFFFFF }, { hex: 0xC0C0C0 },
+    { hex: 0xDEB887 }, { hex: 0x9ACD32 }, { hex: 0xAFEEEE },
+];
+
+// ══════════════════════════════════════════════
+//  状態
+// ══════════════════════════════════════════════
+let scene, camera, renderer, orbitControls, groundPlane, sunLight, shadowCatcher;
+const cubes = [];
+const axisLines = [];          // 直交軸のLine
+let selectedCube   = null;
+let currentColor   = COLORS[0].hex;
+let appMode        = 'view';   // 'view' | 'place' | 'select'
+let areEdgesVisible = false;
+let shadowLevel    = 0;        // 0:影あり 1:影なし
+let axisVisible    = true;
+let colorPopupOpen = false;
+
+// 影2択（影の濃さ＝不透明度のみ変更。色や明るさは不変）
+const SHADOW_LEVELS = [
+    { opacity: 0.16, label: '影あり' },
+    { opacity: 0.0,  label: '影なし' },
+];
+
+// ドラッグ管理
+let dragCube = null, dragStartCubePos = null;
+let pointerDownXY = { x: 0, y: 0 };
+let pointerMoved = false, isDragging = false;
+const DRAG_THRESHOLD = 10;
+
+// 視点ボタン長押し
+const viewIntervals = new Map();
+
+// ══════════════════════════════════════════════
+//  DOM
+// ══════════════════════════════════════════════
+const container  = document.getElementById('container');
+const loadingEl  = document.getElementById('loading');
+const msgModal   = document.getElementById('msgModal');
+const msgText    = document.getElementById('msgText');
+const colorPopup = document.getElementById('color-popup');
+const colorDot   = document.getElementById('color-dot');
+
+document.getElementById('msgClose').addEventListener('click', () => msgModal.classList.remove('open'));
+
+function showMsg(text) { msgText.textContent = text; msgModal.classList.add('open'); }
+
+function setMode(mode) {
+    appMode = mode;
+    document.getElementById('btn-place') .classList.toggle('active', mode === 'place');
+    document.getElementById('btn-select').classList.toggle('active', mode === 'select');
+    if (mode !== 'select') selectCube(null);
+}
+
+function updateColorDot() {
+    colorDot.style.background = '#' + currentColor.toString(16).padStart(6, '0');
+}
+
+function closeColorPopup() {
+    colorPopup.classList.remove('open');
+    colorPopupOpen = false;
+}
+
+// ══════════════════════════════════════════════
+//  Three.js 初期化
+// ══════════════════════════════════════════════
+function initThree() {
+    const W = container.clientWidth;
+    const H = container.clientHeight;
+
+    scene = new THREE.Scene();
+    scene.background = new THREE.Color(0xc8e8de);
+
+    camera = new THREE.PerspectiveCamera(60, W / H, 0.1, 200);
+    camera.position.set(8, 7, 8);
+
+    renderer = new THREE.WebGLRenderer({ antialias: true });
+    renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
+    renderer.setSize(W, H);
+    renderer.shadowMap.enabled = true;
+    renderer.shadowMap.type = THREE.PCFSoftShadowMap;
+    container.appendChild(renderer.domElement);
+
+    // 環境光
+    scene.add(new THREE.AmbientLight(0xffffff, 1.1));
+
+    // 平行光（影つき）
+    sunLight = new THREE.DirectionalLight(0xfff8e0, 0.85);
+    sunLight.position.set(8, 14, 8);
+    sunLight.castShadow = true;
+    sunLight.shadow.mapSize.set(2048, 2048);
+    sunLight.shadow.camera.near = 0.5;
+    sunLight.shadow.camera.far  = 80;
+    sunLight.shadow.camera.left = sunLight.shadow.camera.bottom = -20;
+    sunLight.shadow.camera.right = sunLight.shadow.camera.top   =  20;
+    scene.add(sunLight);
+
+    // 地面（色用。影は受けない＝色・明るさは常に一定）
+    groundPlane = new THREE.Mesh(
+        new THREE.PlaneGeometry(60, 60),
+        new THREE.MeshStandardMaterial({ color: 0x88cc99, roughness: 0.9 })
+    );
+    groundPlane.rotation.x = -Math.PI / 2;
+    groundPlane.receiveShadow = false;
+    scene.add(groundPlane);
+
+    // 影専用の透明地面（ShadowMaterial）。影の部分だけ黒く、それ以外は透明。
+    // opacity で影の濃さを変えても、地面やブロックの色・明るさは変わらない。
+    shadowCatcher = new THREE.Mesh(
+        new THREE.PlaneGeometry(60, 60),
+        new THREE.ShadowMaterial({ opacity: SHADOW_LEVELS[shadowLevel].opacity })
+    );
+    shadowCatcher.rotation.x = -Math.PI / 2;
+    shadowCatcher.position.y = 0.01; // 色地面のわずか上
+    shadowCatcher.receiveShadow = true;
+    scene.add(shadowCatcher);
+
+    // 直交2本（少し太めに見えるよう2本ずつ重ねる）
+    addAxisLine(true);
+    addAxisLine(false);
+
+    // OrbitControls（タッチ・マウスによる視点変更を完全無効）
+    orbitControls = new OrbitControls(camera, renderer.domElement);
+    orbitControls.enableRotate  = false;
+    orbitControls.enablePan     = false;
+    orbitControls.enableZoom    = false;
+    orbitControls.enableDamping = true;
+    orbitControls.dampingFactor = 0.12;
+    orbitControls.mouseButtons  = {};
+    orbitControls.target.set(0, 1, 0);
+    orbitControls.update();
+
+    window.addEventListener('resize', () => {
+        const W2 = container.clientWidth, H2 = container.clientHeight;
+        camera.aspect = W2 / H2;
+        camera.updateProjectionMatrix();
+        renderer.setSize(W2, H2);
+    });
+
+    renderer.domElement.addEventListener('pointerdown',   onPointerDown);
+    renderer.domElement.addEventListener('pointermove',   onPointerMove);
+    renderer.domElement.addEventListener('pointerup',     onPointerUp);
+    renderer.domElement.addEventListener('pointercancel', () => { isDragging = false; dragCube = null; });
+
+    animate();
+    loadingEl.classList.add('hidden');
+}
+
+// 直交線（グレー・地面端まで）
+function addAxisLine(isX) {
+    const L = 30; // 地面(60×60)の半分
+    const mat = new THREE.LineBasicMaterial({ color: 0x999999, opacity: 0.85, transparent: true });
+    const offsets = [0, 0.018]; // 2本並べて太く見せる
+    offsets.forEach(off => {
+        const pts = isX
+            ? [new THREE.Vector3(-L, 0.03, off), new THREE.Vector3(L, 0.03, off)]
+            : [new THREE.Vector3(off, 0.03, -L), new THREE.Vector3(off, 0.03, L)];
+        const line = new THREE.Line(new THREE.BufferGeometry().setFromPoints(pts), mat);
+        line.visible = axisVisible;
+        axisLines.push(line);
+        scene.add(line);
+    });
+}
+
+function animate() {
+    requestAnimationFrame(animate);
+    orbitControls.update();
+    renderer.render(scene, camera);
+}
+
+// ══════════════════════════════════════════════
+//  Raycaster
+// ══════════════════════════════════════════════
+const raycaster = new THREE.Raycaster();
+
+function toNDC(clientX, clientY) {
+    const r = renderer.domElement.getBoundingClientRect();
+    return new THREE.Vector2(
+        ((clientX - r.left) / r.width)  *  2 - 1,
+       -((clientY - r.top)  / r.height) *  2 + 1
+    );
+}
+
+// ══════════════════════════════════════════════
+//  ブロック管理
+// ══════════════════════════════════════════════
+const cubeGeo  = new THREE.BoxGeometry(CUBE_SIZE, CUBE_SIZE, CUBE_SIZE);
+const edgesGeo = new THREE.EdgesGeometry(cubeGeo);
+
+function createCube(pos, hexColor) {
+    if (cubes.some(c => c.position.distanceTo(pos) < 0.5)) return null;
+    const mat  = new THREE.MeshStandardMaterial({ color: hexColor, roughness: 0.5, metalness: 0.04 });
+    const mesh = new THREE.Mesh(cubeGeo, mat);
+    mesh.position.copy(pos);
+    mesh.castShadow    = true;
+    mesh.receiveShadow = true;
+    const edges = new THREE.LineSegments(
+        edgesGeo,
+        new THREE.LineBasicMaterial({ color: 0x000000, transparent: true, opacity: 0.22 })
+    );
+    edges.visible = areEdgesVisible;
+    mesh.add(edges);
+    mesh.userData.edges = edges;
+    scene.add(mesh);
+    cubes.push(mesh);
+    return mesh;
+}
+
+function removeCube(cube) {
+    const i = cubes.indexOf(cube);
+    if (i === -1) return;
+    if (selectedCube === cube) { cube.material.emissive.setHex(0x000000); selectedCube = null; }
+    scene.remove(cube);
+    cubes.splice(i, 1);
+}
+
+function selectCube(cube) {
+    if (selectedCube) selectedCube.material.emissive.setHex(0x000000);
+    selectedCube = cube;
+    if (selectedCube) selectedCube.material.emissive.setHex(0x444444);
+}
+
+// ══════════════════════════════════════════════
+//  ポインタイベント
+// ══════════════════════════════════════════════
+function onPointerDown(e) {
+    e.preventDefault();
+    pointerDownXY = { x: e.clientX, y: e.clientY };
+    pointerMoved = false; isDragging = false; dragCube = null;
+    closeColorPopup();
+
+    if (appMode !== 'select') return;
+    const ndc = toNDC(e.clientX, e.clientY);
+    raycaster.setFromCamera(ndc, camera);
+    const hits = raycaster.intersectObjects(cubes, false);
+    if (hits.length) { dragCube = hits[0].object; dragStartCubePos = dragCube.position.clone(); }
+}
+
+function onPointerMove(e) {
+    e.preventDefault();
+    const dx = e.clientX - pointerDownXY.x, dy = e.clientY - pointerDownXY.y;
+    if (!pointerMoved && Math.hypot(dx, dy) > DRAG_THRESHOLD) pointerMoved = true;
+    if (!pointerMoved || !dragCube) return;
+
+    isDragging = true;
+    if (selectedCube !== dragCube) selectCube(dragCube);
+
+    const ndc = toNDC(e.clientX, e.clientY);
+    raycaster.setFromCamera(ndc, camera);
+    const plane = new THREE.Plane(new THREE.Vector3(0, 1, 0), -dragStartCubePos.y);
+    const pt = new THREE.Vector3();
+    if (!raycaster.ray.intersectPlane(plane, pt)) return;
+
+    const snapped = new THREE.Vector3(
+        Math.round(pt.x / CUBE_SIZE) * CUBE_SIZE,
+        dragStartCubePos.y,
+        Math.round(pt.z / CUBE_SIZE) * CUBE_SIZE
+    );
+    const blocked = cubes.some(c => c !== dragCube && c.position.distanceTo(snapped) < 0.5);
+    dragCube.position.copy(blocked ? dragStartCubePos : snapped);
+    dragCube.material.emissive.setHex(blocked ? 0x550000 : 0x444444);
+}
+
+function onPointerUp(e) {
+    e.preventDefault();
+    if (isDragging && dragCube) {
+        dragCube.material.emissive.setHex(selectedCube === dragCube ? 0x444444 : 0x000000);
+        dragStartCubePos = dragCube.position.clone();
+        isDragging = false; dragCube = null;
+        return;
+    }
+    isDragging = false; dragCube = null;
+    if (pointerMoved) return;
+
+    const ndc = toNDC(e.clientX, e.clientY);
+
+    if (appMode === 'place') {
+        raycaster.setFromCamera(ndc, camera);
+        const hits = raycaster.intersectObjects([groundPlane, ...cubes], false);
+        if (!hits.length || !hits[0].face) return;
+        const hit = hits[0];
+        let newPos;
+        if (hit.object === groundPlane) {
+            newPos = new THREE.Vector3(Math.round(hit.point.x), CUBE_SIZE / 2, Math.round(hit.point.z));
+        } else {
+            newPos = hit.object.position.clone().addScaledVector(hit.face.normal, CUBE_SIZE);
+            newPos.set(
+                Math.round(newPos.x),
+                Math.round((newPos.y - CUBE_SIZE/2) / CUBE_SIZE) * CUBE_SIZE + CUBE_SIZE/2,
+                Math.round(newPos.z)
+            );
+        }
+        if (newPos.y < CUBE_SIZE / 2) newPos.y = CUBE_SIZE / 2;
+        createCube(newPos, currentColor);
+        return;
+    }
+
+    if (appMode === 'select') {
+        raycaster.setFromCamera(ndc, camera);
+        const hits = raycaster.intersectObjects(cubes, false);
+        selectCube(hits.length ? hits[0].object : null);
+    }
+}
+
+// ══════════════════════════════════════════════
+//  カラーパレット（6×2）
+// ══════════════════════════════════════════════
+function buildPalette() {
+    const rowTop = document.getElementById('color-row-top');
+    const rowBot = document.getElementById('color-row-bot');
+    COLORS.forEach((c, i) => {
+        const btn = document.createElement('button');
+        btn.className = 'color-btn' + (c.hex === currentColor ? ' selected' : '');
+        btn.style.background = '#' + c.hex.toString(16).padStart(6, '0');
+        btn.addEventListener('click', () => {
+            currentColor = c.hex;
+            document.querySelectorAll('.color-btn').forEach(b => b.classList.remove('selected'));
+            btn.classList.add('selected');
+            updateColorDot();
+            if (selectedCube) selectedCube.material.color.setHex(currentColor);
+            closeColorPopup();
+        });
+        (i < 6 ? rowTop : rowBot).appendChild(btn);
+    });
+    updateColorDot();
+}
+
+document.getElementById('btn-color').addEventListener('click', (e) => {
+    e.stopPropagation();
+    colorPopupOpen = !colorPopupOpen;
+    colorPopup.classList.toggle('open', colorPopupOpen);
+});
+document.addEventListener('pointerdown', (e) => {
+    if (colorPopupOpen && !colorPopup.contains(e.target) && e.target.id !== 'btn-color') {
+        closeColorPopup();
+    }
+});
+
+// ══════════════════════════════════════════════
+//  ボタン
+// ══════════════════════════════════════════════
+document.getElementById('btn-place') .addEventListener('click', () => setMode(appMode === 'place'  ? 'view' : 'place'));
+document.getElementById('btn-select').addEventListener('click', () => setMode(appMode === 'select' ? 'view' : 'select'));
+
+document.getElementById('btn-delete').addEventListener('click', () => {
+    if (!selectedCube) { showMsg('けすブロックをえらんでください。'); return; }
+    removeCube(selectedCube);
+});
+
+// 辺の表示
+const btnEdges = document.getElementById('btn-edges');
+btnEdges.addEventListener('click', () => {
+    areEdgesVisible = !areEdgesVisible;
+    cubes.forEach(c => { if (c.userData.edges) c.userData.edges.visible = areEdgesVisible; });
+    btnEdges.textContent = areEdgesVisible ? '辺を隠す' : '辺を表示';
+});
+
+// 軸の表示/非表示
+const btnAxis = document.getElementById('btn-axis');
+btnAxis.addEventListener('click', () => {
+    axisVisible = !axisVisible;
+    axisLines.forEach(l => { l.visible = axisVisible; });
+    btnAxis.textContent = axisVisible ? '軸を隠す' : '軸を表示';
+    btnAxis.classList.toggle('active', !axisVisible);
+});
+
+// 影あり ↔ 影なし（影の濃さのみ変更。色・明るさは不変）
+const btnShadow = document.getElementById('btn-shadow');
+btnShadow.addEventListener('click', () => {
+    shadowLevel = (shadowLevel + 1) % SHADOW_LEVELS.length;
+    shadowCatcher.material.opacity = SHADOW_LEVELS[shadowLevel].opacity;
+    btnShadow.textContent = SHADOW_LEVELS[shadowLevel].label;
+    btnShadow.classList.toggle('active', shadowLevel !== 0);
+});
+
+// 視点リセット
+document.getElementById('btn-reset').addEventListener('click', () => {
+    camera.position.set(8, 7, 8);
+    orbitControls.target.set(0, 1, 0);
+    orbitControls.update();
+});
+
+// 上下
+document.getElementById('btn-up').addEventListener('click', () => moveY(1));
+document.getElementById('btn-dn').addEventListener('click', () => moveY(-1));
+
+function moveY(dir) {
+    if (!selectedCube) { showMsg('うごかすブロックをえらんでください。'); return; }
+    const newPos = selectedCube.position.clone();
+    newPos.y += dir * CUBE_SIZE;
+    if (newPos.y < CUBE_SIZE / 2) newPos.y = CUBE_SIZE / 2;
+    if (cubes.some(c => c !== selectedCube && c.position.distanceTo(newPos) < 0.5)) {
+        showMsg('そこには動かせません。'); return;
+    }
+    selectedCube.position.copy(newPos);
+}
+
+// ══════════════════════════════════════════════
+//  視点ボタン（長押し対応）
+// ══════════════════════════════════════════════
+const VIEW_ROT  = 0.04;
+const VIEW_TILT = 0.035;
+
+function rotateView(dTheta, dPhi) {
+    const offset = new THREE.Vector3().copy(camera.position).sub(orbitControls.target);
+    const sp = new THREE.Spherical().setFromVector3(offset);
+    sp.theta += dTheta;
+    sp.phi = Math.max(0.08, Math.min(Math.PI / 2 - 0.08, sp.phi + dPhi));
+    sp.makeSafe();
+    offset.setFromSpherical(sp);
+    camera.position.copy(orbitControls.target).add(offset);
+    camera.lookAt(orbitControls.target);
+}
+
+[
+    { id: 'vbtn-up', dt:  0,        dp:  VIEW_TILT },
+    { id: 'vbtn-dn', dt:  0,        dp: -VIEW_TILT },
+    { id: 'vbtn-lf', dt:  VIEW_ROT, dp:  0 },
+    { id: 'vbtn-rt', dt: -VIEW_ROT, dp:  0 },
+].forEach(({ id, dt, dp }) => {
+    const btn = document.getElementById(id);
+    const start = (e) => {
+        e.preventDefault(); e.stopPropagation();
+        rotateView(dt, dp);
+        viewIntervals.set(id, setInterval(() => rotateView(dt, dp), 80));
+    };
+    const stop = (e) => {
+        e.stopPropagation();
+        clearInterval(viewIntervals.get(id));
+        viewIntervals.delete(id);
+    };
+    btn.addEventListener('pointerdown',   start);
+    btn.addEventListener('pointerup',     stop);
+    btn.addEventListener('pointerleave',  stop);
+    btn.addEventListener('pointercancel', stop);
+});
+
+// ══════════════════════════════════════════════
+//  起動
+// ══════════════════════════════════════════════
+buildPalette();
+initThree();
+
+[
+    { x: 0, y: 0.5, z: 0, c: 0xFFFFFF },
+    { x: 1, y: 0.5, z: 0, c: 0xFFFF00 },
+    { x: 0, y: 1.5, z: 0, c: 0x6495ED },
+].forEach(b => createCube(new THREE.Vector3(b.x, b.y, b.z), b.c));
+
+</script>
+</body>
+</html>
